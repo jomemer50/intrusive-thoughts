@@ -3,8 +3,9 @@
 import { motion } from "framer-motion";
 import { useEffect, useRef } from "react";
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Globe } from "lucide-react";
 import { useTheme } from "next-themes";
+import { useUser } from "@/components/UserContext";
 
 function InkTrail() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -75,6 +76,8 @@ function InkTrail() {
 }
 
 export function InteractiveHome() {
+  const { displayName } = useUser();
+
   return (
     <div
       className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden transition-colors duration-300 notebook-bg dark:notebook-bg-dark"
@@ -102,19 +105,44 @@ export function InteractiveHome() {
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.5, delay: 0.4 }}
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-          className="pointer-events-auto"
+          className="flex flex-col sm:flex-row items-center gap-4 pointer-events-auto"
         >
-          <Link 
-            href="/chat" 
-            className="group relative inline-flex items-center justify-center gap-2 overflow-hidden rounded-full bg-black dark:bg-white px-8 py-4 text-base font-semibold text-white dark:text-black transition-all hover:bg-zinc-800 dark:hover:bg-zinc-200 focus:outline-none focus:ring-2 focus:ring-zinc-400 focus:ring-offset-2"
-          >
-            <span className="relative z-10 flex items-center gap-2">
-              BEGIN
-            </span>
-          </Link>
+          <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+            <Link 
+              href="/chat" 
+              className="group relative inline-flex items-center justify-center gap-2 overflow-hidden rounded-full bg-black dark:bg-white px-8 py-4 text-base font-semibold text-white dark:text-black transition-all hover:bg-zinc-800 dark:hover:bg-zinc-200 focus:outline-none focus:ring-2 focus:ring-zinc-400 focus:ring-offset-2"
+            >
+              <span className="relative z-10 flex items-center gap-2">
+                BEGIN
+                <ArrowRight className="w-4 h-4" />
+              </span>
+            </Link>
+          </motion.div>
+
+          <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+            <Link 
+              href="/network" 
+              className="group relative inline-flex items-center justify-center gap-2 overflow-hidden rounded-full border-2 border-zinc-300 dark:border-zinc-700 bg-transparent px-8 py-4 text-base font-semibold text-zinc-700 dark:text-zinc-300 transition-all hover:bg-zinc-100 dark:hover:bg-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-400 focus:ring-offset-2"
+            >
+              <Globe className="w-4 h-4" />
+              <span>Explore the Network</span>
+            </Link>
+          </motion.div>
         </motion.div>
+
+        {/* Identity display */}
+        {displayName && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.5, delay: 0.8 }}
+            className="pointer-events-auto"
+          >
+            <p className="text-xs text-zinc-400 dark:text-zinc-600">
+              You are <span className="font-medium text-zinc-500 dark:text-zinc-500">{displayName}</span>
+            </p>
+          </motion.div>
+        )}
       </div>
     </div>
   );

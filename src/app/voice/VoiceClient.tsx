@@ -22,6 +22,8 @@ export default function VoiceClient() {
   const recognitionRef = useRef<any>(null);
   const volume = useAudioVisualizer(isListening);
 
+  const [errorMsg, setErrorMsg] = useState('');
+
   useEffect(() => {
     setMounted(true);
     setActiveConversationId(crypto.randomUUID());
@@ -33,15 +35,21 @@ export default function VoiceClient() {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (SpeechRecognition) {
       recognitionRef.current = new SpeechRecognition();
-      recognitionRef.current.continuous = false;
+      // Set to true so it doesn't stop immediately
+      recognitionRef.current.continuous = true;
       recognitionRef.current.interimResults = true;
 
       recognitionRef.current.onresult = (event: any) => {
-        let full = '';
+        let finalTrans = '';
+        let interimTrans = '';
         for (let i = 0; i < event.results.length; i++) {
-          full += event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+             finalTrans += event.results[i][0].transcript;
+          } else {
+             interimTrans += event.results[i][0].transcript;
+          }
         }
-        setTranscript(full);
+        setTranscript(finalTrans + interimTrans);
       };
 
       recognitionRef.current.onend = () => {
@@ -50,6 +58,7 @@ export default function VoiceClient() {
       
       recognitionRef.current.onerror = (event: any) => {
         console.error("Speech recognition error", event.error);
+        setErrorMsg(`Mic Error: ${event.error}`);
         setIsListening(false);
       };
     }
@@ -75,26 +84,7 @@ export default function VoiceClient() {
     }
   };
 
-  const fallbackTTS = (text: string) => {
-    if ('speechSynthesis' in window) {
-      const utterance = new SpeechSynthesisUtterance(text);
-      const voices = window.speechSynthesis.getVoices();
-      const englishVoice = voices.find(v => v.lang.startsWith('en-') && (v.name.includes('Google') || v.name.includes('Natural')));
-      if (englishVoice) {
-        utterance.voice = englishVoice;
-      }
-      utterance.rate = 0.95;
-      
-      utterance.onend = () => {
-         isPlayingRef.current = false;
-         processNextAudio();
-      };
-      
-      // If the queue processor is blocked, we act as the player
-      isPlayingRef.current = true;
-      window.speechSynthesis.speak(utterance);
-    }
-  };
+
 
   const fetchTtsForSentence = async (text: string) => {
     try {
@@ -113,8 +103,8 @@ export default function VoiceClient() {
       audioQueueRef.current.push(audioUrl);
       processNextAudio();
     } catch (e) {
-      console.error(e);
-      fallbackTTS(text);
+      console.error("TTS API Error:", e);
+      // Removed fallback TTS
     }
   };
 
@@ -186,8 +176,13 @@ export default function VoiceClient() {
         window.speechSynthesis.cancel();
       }
       setTranscript('');
-      recognitionRef.current.start();
-      setIsListening(true);
+      setErrorMsg('');
+      try {
+        recognitionRef.current.start();
+        setIsListening(true);
+      } catch (err) {
+        console.error("Failed to start recognition:", err);
+      }
     }
   };
 
@@ -254,10 +249,12 @@ export default function VoiceClient() {
 
         {/* Transcript & Status Text */}
         <div className="absolute bottom-24 max-w-2xl text-center px-6">
-          {status === 'streaming' || status === 'submitted' ? (
+          {errorMsg ? (
+             <p className="text-red-500 font-medium text-lg">{errorMsg}</p>
+          ) : status === 'streaming' || status === 'submitted' ? (
             <p className="text-zinc-500 dark:text-zinc-400 animate-pulse font-medium text-lg">AI is thinking...</p>
           ) : isListening ? (
-            <p className="text-xl font-medium text-black dark:text-white min-h-[3rem]">{transcript}</p>
+            <p className="text-xl font-medium text-black dark:text-white min-h-[3rem]">{transcript || 'Listening...'}</p>
           ) : messages.length > 0 ? (
             <div className="flex flex-col items-center">
                <p className="text-sm text-zinc-500 mb-2">Last Message</p>

@@ -1,31 +1,27 @@
 import { NextRequest } from "next/server";
 import { UIMessage as VercelChatMessage } from "ai";
-import { createUIMessageStreamResponse } from "ai";
+import { createUIMessageStream, createUIMessageStreamResponse } from "ai";
 import { toUIMessageStream } from "@ai-sdk/langchain";
 import { ChatOpenAI } from "@langchain/openai";
 import { HumanMessage, AIMessage, SystemMessage } from "@langchain/core/messages";
 import { PHILOSOPHY_SYSTEM_PROMPT } from "@/lib/prompts";
 
-// LangChain configuration for OpenRouter
-const model = new ChatOpenAI({
-  temperature: 0.7,
-  modelName: "nvidia/nemotron-3-ultra-550b-a55b",
-  maxTokens: 4096,
-  apiKey: process.env.OPENROUTER_API_KEY || "your_openrouter_api_key",
-  configuration: {
-    baseURL: "https://openrouter.ai/api/v1",
-    defaultHeaders: {
-      "HTTP-Referer": "http://localhost:3000",
-      "X-Title": "Philosophical Chatbot",
-    }
-  }
-});
-
 export const runtime = "edge";
 
 export async function POST(req: NextRequest) {
   try {
-    const { messages, conversationId } = await req.json();
+    // LangChain configuration for NVIDIA NIM
+    const model = new ChatOpenAI({
+      temperature: 0.7,
+      modelName: "meta/llama-3.1-70b-instruct",
+      maxTokens: 4096,
+      apiKey: process.env.NVIDIA_API_KEY || "your_nvidia_api_key",
+      configuration: {
+        baseURL: "https://integrate.api.nvidia.com/v1",
+      }
+    });
+
+    const { messages, conversationId, userId } = await req.json();
 
     if (!messages || !Array.isArray(messages)) {
       return new Response("Bad Request", { status: 400 });
@@ -48,11 +44,16 @@ export async function POST(req: NextRequest) {
     formattedMessages.unshift(new SystemMessage(PHILOSOPHY_SYSTEM_PROMPT));
 
     // Call Cloud LLM
-    const stream = await model.stream(formattedMessages);
+    const langchainStream = await model.stream(formattedMessages);
 
-    return createUIMessageStreamResponse({
-      stream: toUIMessageStream(stream)
+    // Create and return the stream — persistence is handled client-side
+    const stream = createUIMessageStream({
+      execute: async ({ writer }) => {
+        writer.merge(toUIMessageStream(langchainStream));
+      },
     });
+
+    return createUIMessageStreamResponse({ stream });
 
   } catch (e: any) {
     console.error("Chat API Error:", e);

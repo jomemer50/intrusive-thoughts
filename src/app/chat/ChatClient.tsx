@@ -2,16 +2,19 @@
 
 import { useChat } from '@ai-sdk/react';
 import { FormEvent, useRef, useEffect, useState } from 'react';
-import { SendIcon, Loader2, Moon, Sun, Trash2, Plus, MessageSquare, Mic } from 'lucide-react';
+import { SendIcon, Loader2, Moon, Sun, Trash2, Plus, MessageSquare, Mic, Globe, User } from 'lucide-react';
 import Link from 'next/link';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useTheme } from 'next-themes';
+import { useUser } from '@/components/UserContext';
+import { useSearchParams } from 'next/navigation';
 
 type ConversationInfo = {
   id: string;
   title: string;
-  updatedAt: number;
+  updated_at: string;
+  parent_conversation_id: string | null;
 };
 
 export default function ChatClient() {
@@ -21,64 +24,133 @@ export default function ChatClient() {
   const [initialMessages, setInitialMessages] = useState<any[]>([]);
   const { theme, setTheme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
+  const { userId, displayName, isLoading: userLoading } = useUser();
+  const searchParams = useSearchParams();
 
+  // Load conversations from Supabase
   useEffect(() => {
     setMounted(true);
-    // Load conversations list
-    const savedConvos = localStorage.getItem('nemotron_conversations');
-    let loaded: ConversationInfo[] = [];
-    if (savedConvos) {
+
+    if (userLoading || !userId) return;
+
+    async function loadConversations() {
       try {
-        loaded = JSON.parse(savedConvos);
-        setConversations(loaded);
-      } catch (e) {}
+        const res = await fetch(`/api/conversations?userId=${userId}`);
+        if (!res.ok) throw new Error('Failed to fetch conversations');
+        const data = await res.json();
+
+        const mapped: ConversationInfo[] = data.map((c: any) => ({
+          id: c.id,
+          title: c.title,
+          updated_at: c.updated_at,
+          parent_conversation_id: c.parent_conversation_id,
+        }));
+
+        setConversations(mapped);
+
+        // Check if we're replying to a thought from the network
+        const replyTo = searchParams.get('replyTo');
+
+        if (replyTo) {
+          // Remove replyTo from URL so refresh doesn't trigger it again
+          window.history.replaceState({}, '', '/chat');
+          
+          // Create a new branched conversation
+          await createNewChat(replyTo);
+        } else if (mapped.length > 0) {
+          // Load most recent conversation
+          const latestId = mapped[0].id;
+          await loadMessages(latestId);
+          setActiveConversationId(latestId);
+        } else {
+          await createNewChat();
+        }
+      } catch (err) {
+        console.error('Failed to load conversations:', err);
+        await createNewChat();
+      } finally {
+        setLoadedInitial(true);
+      }
     }
 
-    if (loaded.length > 0) {
-      // Load the most recent conversation by default
-      loaded.sort((a, b) => b.updatedAt - a.updatedAt);
-      const latestId = loaded[0].id;
-      setActiveConversationId(latestId);
-      const savedMsgs = localStorage.getItem(`nemotron_chat_${latestId}`);
-      if (savedMsgs) {
-        try {
-          setInitialMessages(JSON.parse(savedMsgs));
-        } catch (e) {}
-      }
-    } else {
-      // No conversations exist, start a fresh one
-      setActiveConversationId(crypto.randomUUID());
-    }
-    setLoadedInitial(true);
-  }, []);
+    loadConversations();
+  }, [userLoading, userId]);
 
-  const createNewChat = () => {
-    const newId = crypto.randomUUID();
-    setActiveConversationId(newId);
-    setInitialMessages([]); // Reset initial messages for the new chat
-  };
+  const loadMessages = async (conversationId: string) => {
+    try {
+      const res = await fetch(`/api/conversations/${conversationId}/messages`);
+      if (!res.ok) throw new Error('Failed to fetch messages');
+      const data = await res.json();
 
-  const selectConversation = (id: string) => {
-    setActiveConversationId(id);
-    const savedMsgs = localStorage.getItem(`nemotron_chat_${id}`);
-    if (savedMsgs) {
-      try {
-        setInitialMessages(JSON.parse(savedMsgs));
-      } catch (e) {
-        setInitialMessages([]);
-      }
-    } else {
+      // Transform Supabase messages to the format useChat expects
+      const transformed = data.map((m: any) => ({
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        parts: [{ type: 'text', text: m.content }],
+      }));
+
+      setInitialMessages(transformed);
+    } catch (err) {
+      console.error('Failed to load messages:', err);
       setInitialMessages([]);
     }
   };
 
-  const deleteConversation = (id: string, e: React.MouseEvent) => {
+  const createNewChat = async (parentConversationId?: string) => {
+    if (!userId) return;
+
+    try {
+      const res = await fetch('/api/conversations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId,
+          title: parentConversationId ? 'Reply Thought' : 'New Thought',
+          parentConversationId,
+        }),
+      });
+
+      if (!res.ok) throw new Error('Failed to create conversation');
+      const convo = await res.json();
+
+      setInitialMessages([]);
+      setActiveConversationId(convo.id);
+
+      // Add to local list
+      setConversations(prev => [{
+        id: convo.id,
+        title: convo.title,
+        updated_at: convo.updated_at,
+        parent_conversation_id: convo.parent_conversation_id || null,
+      }, ...prev]);
+    } catch (err) {
+      console.error('Failed to create conversation:', err);
+      // Fallback: use a local-only ID
+      const fallbackId = crypto.randomUUID();
+      setActiveConversationId(fallbackId);
+      setInitialMessages([]);
+    }
+  };
+
+  const selectConversation = async (id: string) => {
+    await loadMessages(id);
+    setActiveConversationId(id);
+  };
+
+  const deleteConversation = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    // Remove from local state
     const newConvos = conversations.filter(c => c.id !== id);
     setConversations(newConvos);
-    localStorage.setItem('nemotron_conversations', JSON.stringify(newConvos));
-    localStorage.removeItem(`nemotron_chat_${id}`);
     
+    // Delete from Supabase
+    try {
+      await fetch(`/api/conversations/${id}`, { method: 'DELETE' });
+    } catch (err) {
+      console.error('Failed to delete conversation:', err);
+    }
+
     if (activeConversationId === id) {
       if (newConvos.length > 0) {
         selectConversation(newConvos[0].id);
@@ -88,21 +160,37 @@ export default function ChatClient() {
     }
   };
 
-  if (!loadedInitial) return null;
+  if (userLoading || !loadedInitial) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-white dark:bg-zinc-950">
+        <div className="flex flex-col items-center space-y-4">
+          <Loader2 className="w-8 h-8 animate-spin text-zinc-500" />
+          <p className="text-zinc-500 text-sm">Initializing your identity...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100">
       {/* Sidebar */}
       <div className="w-64 bg-zinc-50 dark:bg-zinc-900 border-r border-zinc-200 dark:border-zinc-800 flex flex-col hidden md:flex">
-        <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 flex justify-between items-center">
-          <h2 className="font-bold text-lg">Conversations</h2>
-          <button 
-            onClick={createNewChat}
-            className="p-2 rounded hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors"
-            title="New Chat"
-          >
-            <Plus className="w-5 h-5" />
-          </button>
+        <div className="p-4 border-b border-zinc-200 dark:border-zinc-800">
+          <div className="flex justify-between items-center mb-3">
+            <h2 className="font-bold text-lg">Conversations</h2>
+            <button 
+              onClick={() => createNewChat()}
+              className="p-2 rounded hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors"
+              title="New Chat"
+            >
+              <Plus className="w-5 h-5" />
+            </button>
+          </div>
+          {/* User identity badge */}
+          <div className="flex items-center space-x-2 text-xs text-zinc-500 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-800 rounded-lg px-3 py-2">
+            <User className="w-3.5 h-3.5" />
+            <span className="font-medium">{displayName}</span>
+          </div>
         </div>
         <div className="flex-1 overflow-y-auto p-2 space-y-1">
           {conversations.length === 0 ? (
@@ -120,7 +208,12 @@ export default function ChatClient() {
               >
                 <div className="flex items-center space-x-2 truncate">
                   <MessageSquare className="w-4 h-4 text-zinc-500 flex-shrink-0" />
-                  <span className="text-sm truncate">{c.title}</span>
+                  <div className="truncate">
+                    <span className="text-sm truncate block">{c.title}</span>
+                    {c.parent_conversation_id && (
+                      <span className="text-xs text-zinc-400 dark:text-zinc-500">↩ reply</span>
+                    )}
+                  </div>
                 </div>
                 <button 
                   onClick={(e) => deleteConversation(c.id, e)}
@@ -131,6 +224,16 @@ export default function ChatClient() {
               </div>
             ))
           )}
+        </div>
+        {/* Network link at bottom of sidebar */}
+        <div className="p-3 border-t border-zinc-200 dark:border-zinc-800">
+          <Link 
+            href="/network"
+            className="flex items-center justify-center space-x-2 w-full py-2.5 px-4 rounded-lg bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors text-sm font-medium text-zinc-700 dark:text-zinc-300"
+          >
+            <Globe className="w-4 h-4" />
+            <span>Thought Network</span>
+          </Link>
         </div>
       </div>
 
@@ -143,6 +246,9 @@ export default function ChatClient() {
           </div>
           {mounted && (
             <div className="flex items-center space-x-2">
+              <Link href="/network" className="p-2 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors flex items-center md:hidden" title="Thought Network">
+                <Globe className="w-5 h-5" />
+              </Link>
               <Link href="/voice" className="p-2 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors flex items-center" title="Voice Mode">
                 <Mic className="w-5 h-5" />
               </Link>
@@ -157,22 +263,22 @@ export default function ChatClient() {
         </div>
 
         {/* The active chat app instance */}
-        {activeConversationId && (
+        {activeConversationId && userId && (
           <ChatApp 
             key={activeConversationId} // Force remount on conversation change
             conversationId={activeConversationId} 
+            userId={userId}
             initialMessages={initialMessages} 
             updateConversationsList={(id, title) => {
               setConversations(prev => {
                 const existing = prev.find(c => c.id === id);
-                if (existing && existing.title === title) return prev; // Prevent unnecessary re-renders
+                if (existing && existing.title === title) return prev;
                 let newList;
                 if (existing) {
-                  newList = prev.map(c => c.id === id ? { ...c, title, updatedAt: Date.now() } : c);
+                  newList = prev.map(c => c.id === id ? { ...c, title, updated_at: new Date().toISOString() } : c);
                 } else {
-                  newList = [{ id, title, updatedAt: Date.now() }, ...prev];
+                  newList = [{ id, title, updated_at: new Date().toISOString(), parent_conversation_id: null }, ...prev];
                 }
-                localStorage.setItem('nemotron_conversations', JSON.stringify(newList));
                 return newList;
               });
             }}
@@ -183,22 +289,44 @@ export default function ChatClient() {
   );
 }
 
-function ChatApp({ conversationId, initialMessages, updateConversationsList }: { conversationId: string, initialMessages: any[], updateConversationsList: (id: string, title: string) => void }) {
+function ChatApp({ conversationId, userId, initialMessages, updateConversationsList }: { conversationId: string, userId: string, initialMessages: any[], updateConversationsList: (id: string, title: string) => void }) {
   const [input, setInput] = useState('');
+  const savedMsgIdsRef = useRef<Set<string>>(new Set(initialMessages.map((m: any) => m.id)));
+
+  // Helper to persist a single message to Supabase
+  const persistMessage = async (role: string, content: string) => {
+    try {
+      await fetch(`/api/conversations/${conversationId}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role, content }),
+      });
+    } catch (err) {
+      console.error('Failed to persist message:', err);
+    }
+  };
 
   const { messages, sendMessage, status, setMessages } = useChat({
     api: '/api/chat',
+    id: conversationId,
     initialMessages,
     body: {
-      conversationId
-    }
+      conversationId,
+      userId,
+    },
+    onFinish: async (event: any) => {
+      // Persist the assistant's response when streaming completes
+      const msg = event.message;
+      const assistantText = msg?.content || msg?.parts?.filter((p: any) => p.type === 'text').map((p: any) => p.text).join('') || '';
+      if (assistantText) {
+        await persistMessage('assistant', assistantText);
+      }
+    },
   } as any);
 
   useEffect(() => {
     if (messages.length > 0) {
-      localStorage.setItem(`nemotron_chat_${conversationId}`, JSON.stringify(messages));
-      
-      // Update the conversations list title if it's the first user message
+      // Update the conversations list title from the first user message
       const firstUserMessage = messages.find(m => m.role === 'user');
       const title = firstUserMessage ? ((firstUserMessage as any).content || firstUserMessage.parts?.filter((p:any) => p.type === 'text').map((p:any) => p.text).join(''))?.substring(0, 30) + '...' : 'New Chat';
       updateConversationsList(conversationId, title);
@@ -212,11 +340,27 @@ function ChatApp({ conversationId, initialMessages, updateConversationsList }: {
     setInput(e.target.value);
   };
 
-  const onSubmit = (e: FormEvent<HTMLFormElement>) => {
+  const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!input.trim()) return;
-    sendMessage({ role: 'user', parts: [{ type: 'text', text: input }] });
+    const userText = input.trim();
+    sendMessage({ role: 'user', parts: [{ type: 'text', text: userText }] });
     setInput('');
+
+    // Persist the user message to Supabase
+    await persistMessage('user', userText);
+
+    // Update conversation title if this is the first message
+    if (messages.length === 0) {
+      try {
+        const title = userText.substring(0, 30) + (userText.length > 30 ? '...' : '');
+        await fetch(`/api/conversations/${conversationId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title }),
+        });
+      } catch {}
+    }
   };
 
   useEffect(() => {

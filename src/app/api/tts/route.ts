@@ -12,7 +12,7 @@ export async function POST(req: NextRequest) {
     }
 
     const hf_token = process.env.HF_TOKEN;
-    const client = await Client.connect("tonyassi/voice-clone", hf_token ? { hf_token } : {});
+    const client = await Client.connect("tonyassi/voice-clone", (hf_token ? { hf_token } : {}) as any);
     
     const referenceAudioPath = path.join(process.cwd(), "public", "voice_sample.wav");
     

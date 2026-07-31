@@ -45,3 +45,20 @@ body {
   background-size: 100% 30px, 100% 100%;
   background-position: 0 0, 0 0;
 }
+
+/* Slide-in animation for conversation panel */
+@keyframes slide-in-right {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-in {
+  animation: slide-in-right 0.3s ease-out;
+}
+
