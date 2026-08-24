@@ -2,26 +2,31 @@
 
 import { useChat } from '@ai-sdk/react';
 import { FormEvent, useRef, useEffect, useState } from 'react';
-import { SendIcon, Loader2, Moon, Sun, Trash2, Plus, MessageSquare, Mic, Globe, User } from 'lucide-react';
+import { SendIcon, Loader2, Moon, Sun, Trash2, Plus, MessageSquare, User } from 'lucide-react';
 import Link from 'next/link';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useTheme } from 'next-themes';
 import { useUser } from '@/components/UserContext';
+import { useConversations } from '@/components/ConversationContext';
 import { useSearchParams } from 'next/navigation';
 
-type ConversationInfo = {
-  id: string;
-  title: string;
-  updated_at: string;
-  parent_conversation_id: string | null;
-};
-
 export default function ChatClient() {
-  const [conversations, setConversations] = useState<ConversationInfo[]>([]);
-  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
-  const [loadedInitial, setLoadedInitial] = useState(false);
-  const [initialMessages, setInitialMessages] = useState<any[]>([]);
+  // All conversation state lives in ConversationContext (root layout),
+  // so it survives navigation between pages.
+  const {
+    conversations,
+    setConversations,
+    activeConversationId,
+    setActiveConversationId,
+    initialMessages,
+    setInitialMessages,
+    loadedInitial,
+    setLoadedInitial,
+    hasInitialized,
+    creatingRef,
+  } = useConversations();
+
   const { theme, setTheme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const { userId, displayName, isLoading: userLoading } = useUser();
@@ -32,6 +37,17 @@ export default function ChatClient() {
     setMounted(true);
 
     if (userLoading || !userId) return;
+    // hasInitialized lives in the context so it stays true across navigations —
+    // returning from other pages skips the entire fetch and shows state instantly.
+    if (hasInitialized.current) return;
+    hasInitialized.current = true;
+
+    // Read replyTo synchronously before any awaits, then clear it from the URL
+    // immediately so a second effect run (if it ever happens) won't see it.
+    const replyTo = searchParams.get('replyTo') || null;
+    if (replyTo) {
+      window.history.replaceState({}, '', '/chat');
+    }
 
     async function loadConversations() {
       try {
@@ -39,7 +55,7 @@ export default function ChatClient() {
         if (!res.ok) throw new Error('Failed to fetch conversations');
         const data = await res.json();
 
-        const mapped: ConversationInfo[] = data.map((c: any) => ({
+        const mapped = data.map((c: any) => ({
           id: c.id,
           title: c.title,
           updated_at: c.updated_at,
@@ -48,22 +64,23 @@ export default function ChatClient() {
 
         setConversations(mapped);
 
-        // Check if we're replying to a thought from the network
-        const replyTo = searchParams.get('replyTo');
-
         if (replyTo) {
-          // Remove replyTo from URL so refresh doesn't trigger it again
-          window.history.replaceState({}, '', '/chat');
-          
-          // Create a new branched conversation
+          // Branch off from a thought
           await createNewChat(replyTo);
-        } else if (mapped.length > 0) {
-          // Load most recent conversation
-          const latestId = mapped[0].id;
-          await loadMessages(latestId);
-          setActiveConversationId(latestId);
         } else {
-          await createNewChat();
+          // Try to restore the last active conversation from sessionStorage
+          const savedId = sessionStorage.getItem('activeConversationId');
+          const restored = savedId ? mapped.find((c: any) => c.id === savedId) : null;
+
+          if (restored) {
+            await loadMessages(restored.id);
+            setActiveConversationId(restored.id);
+          } else if (mapped.length > 0) {
+            await loadMessages(mapped[0].id);
+            setActiveConversationId(mapped[0].id);
+          } else {
+            await createNewChat();
+          }
         }
       } catch (err) {
         console.error('Failed to load conversations:', err);
@@ -99,6 +116,8 @@ export default function ChatClient() {
 
   const createNewChat = async (parentConversationId?: string) => {
     if (!userId) return;
+    if (creatingRef.current) return;
+    creatingRef.current = true;
 
     try {
       const res = await fetch('/api/conversations', {
@@ -117,7 +136,6 @@ export default function ChatClient() {
       setInitialMessages([]);
       setActiveConversationId(convo.id);
 
-      // Add to local list
       setConversations(prev => [{
         id: convo.id,
         title: convo.title,
@@ -126,10 +144,11 @@ export default function ChatClient() {
       }, ...prev]);
     } catch (err) {
       console.error('Failed to create conversation:', err);
-      // Fallback: use a local-only ID
       const fallbackId = crypto.randomUUID();
       setActiveConversationId(fallbackId);
       setInitialMessages([]);
+    } finally {
+      creatingRef.current = false;
     }
   };
 
@@ -225,16 +244,6 @@ export default function ChatClient() {
             ))
           )}
         </div>
-        {/* Network link at bottom of sidebar */}
-        <div className="p-3 border-t border-zinc-200 dark:border-zinc-800">
-          <Link 
-            href="/network"
-            className="flex items-center justify-center space-x-2 w-full py-2.5 px-4 rounded-lg bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors text-sm font-medium text-zinc-700 dark:text-zinc-300"
-          >
-            <Globe className="w-4 h-4" />
-            <span>Thought Network</span>
-          </Link>
-        </div>
       </div>
 
       {/* Main Chat Area */}
@@ -246,12 +255,6 @@ export default function ChatClient() {
           </div>
           {mounted && (
             <div className="flex items-center space-x-2">
-              <Link href="/network" className="p-2 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors flex items-center md:hidden" title="Thought Network">
-                <Globe className="w-5 h-5" />
-              </Link>
-              <Link href="/voice" className="p-2 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors flex items-center" title="Voice Mode">
-                <Mic className="w-5 h-5" />
-              </Link>
               <button
                 onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
                 className="p-2 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
@@ -314,20 +317,20 @@ function ChatApp({ conversationId, userId, initialMessages, updateConversationsL
       conversationId,
       userId,
     },
-    onFinish: async (event: any) => {
+    onFinish: async (msgOrEvent: any) => {
       // Persist the assistant's response when streaming completes
-      const msg = event.message;
+      const msg = msgOrEvent.message || msgOrEvent;
       const assistantText = msg?.content || msg?.parts?.filter((p: any) => p.type === 'text').map((p: any) => p.text).join('') || '';
       if (assistantText) {
         await persistMessage('assistant', assistantText);
       }
     },
-  } as any);
+  } as any) as any;
 
   useEffect(() => {
     if (messages.length > 0) {
       // Update the conversations list title from the first user message
-      const firstUserMessage = messages.find(m => m.role === 'user');
+      const firstUserMessage = messages.find((m: any) => m.role === 'user');
       const title = firstUserMessage ? ((firstUserMessage as any).content || firstUserMessage.parts?.filter((p:any) => p.type === 'text').map((p:any) => p.text).join(''))?.substring(0, 30) + '...' : 'New Chat';
       updateConversationsList(conversationId, title);
     }
@@ -378,7 +381,7 @@ function ChatApp({ conversationId, userId, initialMessages, updateConversationsL
           </div>
         )}
         
-        {messages.map((m) => (
+        {messages.map((m: any) => (
           <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
             <div className={`px-4 py-3 rounded-2xl max-w-[85%] ${
               m.role === 'user' 

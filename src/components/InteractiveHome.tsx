@@ -3,7 +3,7 @@
 import { motion } from "framer-motion";
 import { useEffect, useRef } from "react";
 import Link from "next/link";
-import { ArrowRight, Globe } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useUser } from "@/components/UserContext";
 
@@ -116,16 +116,6 @@ export function InteractiveHome() {
                 BEGIN
                 <ArrowRight className="w-4 h-4" />
               </span>
-            </Link>
-          </motion.div>
-
-          <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-            <Link 
-              href="/network" 
-              className="group relative inline-flex items-center justify-center gap-2 overflow-hidden rounded-full border-2 border-zinc-300 dark:border-zinc-700 bg-transparent px-8 py-4 text-base font-semibold text-zinc-700 dark:text-zinc-300 transition-all hover:bg-zinc-100 dark:hover:bg-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-400 focus:ring-offset-2"
-            >
-              <Globe className="w-4 h-4" />
-              <span>Explore the Network</span>
             </Link>
           </motion.div>
         </motion.div>

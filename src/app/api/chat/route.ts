@@ -6,7 +6,7 @@ import { ChatOpenAI } from "@langchain/openai";
 import { HumanMessage, AIMessage, SystemMessage } from "@langchain/core/messages";
 import { PHILOSOPHY_SYSTEM_PROMPT } from "@/lib/prompts";
 
-export const runtime = "edge";
+
 
 export async function POST(req: NextRequest) {
   try {
