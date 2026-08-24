@@ -30,4 +30,7 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 ## Architecture Notes
 
 - The chat interface is heavily reliant on client-side state (`useChat` from `@ai-sdk/react`) to manage conversations without database latency.
-- The backend API route (`/api/chat`) is configured for the Edge runtime to ensure maximum streaming performance and minimum TTFB (Time to First Byte).
+
+## License
+
+This project is open-sourced under the [MIT License](LICENSE).
