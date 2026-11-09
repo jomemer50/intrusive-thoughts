@@ -16,8 +16,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Nemotron Chatbot",
-  description: "Philosophical AI Chatbot",
+  title: "Intrusive Thoughts",
+  description: "Get your intrusive thoughts out of your head and argue with them — a philosophical AI to think out loud with.",
 };
 
 export default function RootLayout({
