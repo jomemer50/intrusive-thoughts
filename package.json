@@ -6,29 +6,25 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@ai-sdk/langchain": "^2.0.209",
     "@ai-sdk/react": "^3.0.206",
-    "@auth0/nextjs-auth0": "^4.22.0",
-    "@gradio/client": "^2.3.0",
-    "@langchain/anthropic": "^1.4.0",
+    "@langchain/core": "^1.1.48",
     "@langchain/openai": "^1.4.7",
     "@supabase/supabase-js": "^2.108.1",
     "@tailwindcss/typography": "^0.5.20",
-    "@types/uuid": "^10.0.0",
     "ai": "^6.0.202",
     "framer-motion": "^12.40.0",
-    "langchain": "^1.4.4",
     "lucide-react": "^1.17.0",
     "next": "16.2.9",
     "next-themes": "^0.4.6",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-markdown": "^10.1.0",
-    "remark-gfm": "^4.0.1",
-    "uuid": "^14.0.0"
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
