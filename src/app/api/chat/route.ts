@@ -3,7 +3,8 @@ import { createUIMessageStream, createUIMessageStreamResponse, type UIMessage } 
 import { toUIMessageStream } from "@ai-sdk/langchain";
 import { ChatOpenAI } from "@langchain/openai";
 import { HumanMessage, AIMessage, SystemMessage } from "@langchain/core/messages";
-import { PHILOSOPHY_SYSTEM_PROMPT } from "@/lib/prompts";
+import { PHILOSOPHY_SYSTEM_PROMPT, SAFETY_REMINDER } from "@/lib/prompts";
+import { mentionsHarm } from "@/lib/safety";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import { getSessionUserId, isUuid, unauthorized } from "@/lib/session";
 import { loadThread, MAX_MESSAGE_CHARS } from "@/lib/conversations";
@@ -65,7 +66,9 @@ export async function POST(req: NextRequest) {
     const receivedAt = new Date();
 
     const formattedMessages = [
-      new SystemMessage(PHILOSOPHY_SYSTEM_PROMPT),
+      // One system message, first: some chat templates (e.g. Llama 3.1 on NIM/vLLM)
+      // reject a system message anywhere else, so the reminder is appended to it.
+      new SystemMessage(mentionsHarm(userText) ? `${PHILOSOPHY_SYSTEM_PROMPT}\n${SAFETY_REMINDER}` : PHILOSOPHY_SYSTEM_PROMPT),
       ...thread
         .slice(-(MAX_HISTORY_MESSAGES - 1))
         .map((m) => (m.role === "user" ? new HumanMessage(m.content) : new AIMessage(m.content))),

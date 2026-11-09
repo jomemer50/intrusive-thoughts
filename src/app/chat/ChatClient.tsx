@@ -2,7 +2,7 @@
 
 import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport, type UIMessage } from 'ai';
-import { FormEvent, useRef, useEffect, useState, useSyncExternalStore } from 'react';
+import { FormEvent, Fragment, useRef, useEffect, useState, useSyncExternalStore } from 'react';
 import { SendIcon, Loader2, Moon, Sun, Trash2, Plus, MessageSquare, User, Menu, X, RotateCcw } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -11,6 +11,8 @@ import { useUser } from '@/components/UserContext';
 import { useConversations, type ConversationInfo } from '@/components/ConversationContext';
 import { useSearchParams } from 'next/navigation';
 import { makeTitle, textOf, toUIMessage } from '@/lib/messages';
+import { mentionsHarm } from '@/lib/safety';
+import { SupportCard } from '@/components/SupportCard';
 
 type StoredMessage = { id: string; conversation_id: string; role: 'user' | 'assistant'; content: string };
 type MessageMeta = { conversationId?: string };
@@ -386,6 +388,8 @@ function ChatApp({
   });
 
   const isLoading = status === 'streaming' || status === 'submitted';
+  // Show crisis resources once, under the most recent message that mentions harm.
+  const supportAfterId = messages.findLast((m) => m.role === 'user' && mentionsHarm(textOf(m)))?.id;
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const send = (text: string) => {
@@ -426,21 +430,24 @@ function ChatApp({
         )}
 
         {messages.map((m) => (
-          <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`px-4 py-3 rounded-2xl max-w-[85%] ${
-              m.role === 'user'
-                ? 'bg-black text-white dark:bg-zinc-100 dark:text-black rounded-br-sm'
-                : 'bg-zinc-100 text-black dark:bg-zinc-800 dark:text-zinc-100 rounded-bl-sm border border-zinc-200 dark:border-zinc-700'
-            }`}>
-              {m.role === 'user' ? (
-                <div className="whitespace-pre-wrap font-medium">{textOf(m)}</div>
-              ) : (
-                <div className="prose prose-sm max-w-none text-black dark:text-zinc-100 prose-p:text-black dark:prose-p:text-zinc-100 prose-headings:text-black dark:prose-headings:text-zinc-100 prose-strong:text-black dark:prose-strong:text-zinc-100 prose-a:text-blue-600 dark:prose-a:text-blue-400">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{textOf(m)}</ReactMarkdown>
-                </div>
-              )}
+          <Fragment key={m.id}>
+            <div className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+              <div className={`px-4 py-3 rounded-2xl max-w-[85%] ${
+                m.role === 'user'
+                  ? 'bg-black text-white dark:bg-zinc-100 dark:text-black rounded-br-sm'
+                  : 'bg-zinc-100 text-black dark:bg-zinc-800 dark:text-zinc-100 rounded-bl-sm border border-zinc-200 dark:border-zinc-700'
+              }`}>
+                {m.role === 'user' ? (
+                  <div className="whitespace-pre-wrap font-medium">{textOf(m)}</div>
+                ) : (
+                  <div className="prose prose-sm max-w-none text-black dark:text-zinc-100 prose-p:text-black dark:prose-p:text-zinc-100 prose-headings:text-black dark:prose-headings:text-zinc-100 prose-strong:text-black dark:prose-strong:text-zinc-100 prose-a:text-blue-600 dark:prose-a:text-blue-400">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{textOf(m)}</ReactMarkdown>
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
+            {m.id === supportAfterId && <SupportCard />}
+          </Fragment>
         ))}
         {status === 'submitted' && (
           <div className="flex justify-start">
@@ -482,6 +489,14 @@ function ChatApp({
             <SendIcon className="w-5 h-5" />
           </button>
         </form>
+        <p className="max-w-4xl mx-auto mt-2 text-center text-[11px] leading-4 text-zinc-400 dark:text-zinc-500">
+          An AI to think out loud with, not therapy or a crisis service. If you&apos;re not safe, contact local emergency
+          services or{' '}
+          <a href="https://findahelpline.com" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">
+            find a helpline
+          </a>
+          .
+        </p>
       </div>
     </>
   );

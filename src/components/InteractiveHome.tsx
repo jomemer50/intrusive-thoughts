@@ -121,6 +121,19 @@ export function InteractiveHome() {
           </motion.div>
         </motion.div>
 
+        <motion.p
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.5, delay: 0.6 }}
+          className="pointer-events-auto max-w-md px-6 text-center text-xs text-zinc-500 dark:text-zinc-500"
+        >
+          Not therapy or a crisis service. If a thought feels like something you might act on,{' '}
+          <a href="https://findahelpline.com" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">
+            talk to someone now
+          </a>
+          .
+        </motion.p>
+
         {/* Identity display */}
         {displayName && (
           <motion.div
