@@ -1,6 +1,7 @@
 "use client";
 
 import { useChat } from '@ai-sdk/react';
+import { DefaultChatTransport } from 'ai';
 import { FormEvent, useRef, useEffect, useState } from 'react';
 import { SendIcon, Loader2, Moon, Sun, Trash2, Plus, MessageSquare, User } from 'lucide-react';
 import Link from 'next/link';
@@ -29,14 +30,14 @@ export default function ChatClient() {
 
   const { theme, setTheme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
-  const { userId, displayName, isLoading: userLoading } = useUser();
+  const { displayName, isLoading: userLoading, isReady, error: sessionError, retry: retrySession } = useUser();
   const searchParams = useSearchParams();
 
   // Load conversations from Supabase
   useEffect(() => {
     setMounted(true);
 
-    if (userLoading || !userId) return;
+    if (userLoading || !isReady) return;
     // hasInitialized lives in the context so it stays true across navigations —
     // returning from other pages skips the entire fetch and shows state instantly.
     if (hasInitialized.current) return;
@@ -51,7 +52,7 @@ export default function ChatClient() {
 
     async function loadConversations() {
       try {
-        const res = await fetch(`/api/conversations?userId=${userId}`);
+        const res = await fetch('/api/conversations');
         if (!res.ok) throw new Error('Failed to fetch conversations');
         const data = await res.json();
 
@@ -91,7 +92,7 @@ export default function ChatClient() {
     }
 
     loadConversations();
-  }, [userLoading, userId]);
+  }, [userLoading, isReady]);
 
   const loadMessages = async (conversationId: string) => {
     try {
@@ -115,7 +116,7 @@ export default function ChatClient() {
   };
 
   const createNewChat = async (parentConversationId?: string) => {
-    if (!userId) return;
+    if (!isReady) return;
     if (creatingRef.current) return;
     creatingRef.current = true;
 
@@ -124,7 +125,6 @@ export default function ChatClient() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          userId,
           title: parentConversationId ? 'Reply Thought' : 'New Thought',
           parentConversationId,
         }),
@@ -178,6 +178,22 @@ export default function ChatClient() {
       }
     }
   };
+
+  if (sessionError) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-white dark:bg-zinc-950">
+        <div className="flex flex-col items-center space-y-4">
+          <p className="text-zinc-500 text-sm">Couldn&apos;t start your session.</p>
+          <button
+            onClick={retrySession}
+            className="px-4 py-2 rounded-lg bg-black text-white dark:bg-zinc-100 dark:text-black text-sm"
+          >
+            Try again
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (userLoading || !loadedInitial) {
     return (
@@ -266,11 +282,10 @@ export default function ChatClient() {
         </div>
 
         {/* The active chat app instance */}
-        {activeConversationId && userId && (
+        {activeConversationId && isReady && (
           <ChatApp 
             key={activeConversationId} // Force remount on conversation change
             conversationId={activeConversationId} 
-            userId={userId}
             initialMessages={initialMessages} 
             updateConversationsList={(id, title) => {
               setConversations(prev => {
@@ -292,7 +307,7 @@ export default function ChatClient() {
   );
 }
 
-function ChatApp({ conversationId, userId, initialMessages, updateConversationsList }: { conversationId: string, userId: string, initialMessages: any[], updateConversationsList: (id: string, title: string) => void }) {
+function ChatApp({ conversationId, initialMessages, updateConversationsList }: { conversationId: string, initialMessages: any[], updateConversationsList: (id: string, title: string) => void }) {
   const [input, setInput] = useState('');
   const savedMsgIdsRef = useRef<Set<string>>(new Set(initialMessages.map((m: any) => m.id)));
 
@@ -310,13 +325,10 @@ function ChatApp({ conversationId, userId, initialMessages, updateConversationsL
   };
 
   const { messages, sendMessage, status, setMessages } = useChat({
-    api: '/api/chat',
     id: conversationId,
     initialMessages,
-    body: {
-      conversationId,
-      userId,
-    },
+    // useChat (AI SDK 5+) ignores a top-level `body`; request data goes through the transport.
+    transport: new DefaultChatTransport({ api: '/api/chat', body: { conversationId } }),
     onFinish: async (msgOrEvent: any) => {
       // Persist the assistant's response when streaming completes
       const msg = msgOrEvent.message || msgOrEvent;
