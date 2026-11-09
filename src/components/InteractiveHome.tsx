@@ -27,10 +27,11 @@ function InkTrail() {
     window.addEventListener("resize", resize);
     resize();
 
-    const handleMouseMove = (e: MouseEvent) => {
+    // Pointer events cover mouse, pen and touch (mousemove never fires for touch drags).
+    const handlePointerMove = (e: PointerEvent) => {
       points.push({ x: e.clientX, y: e.clientY, life: 1.0 });
     };
-    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("pointermove", handlePointerMove);
 
     const draw = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -67,7 +68,7 @@ function InkTrail() {
 
     return () => {
       window.removeEventListener("resize", resize);
-      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("pointermove", handlePointerMove);
       cancelAnimationFrame(animationFrameId);
     };
   }, [resolvedTheme]);
@@ -80,7 +81,7 @@ export function InteractiveHome() {
 
   return (
     <div
-      className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden transition-colors duration-300 notebook-bg dark:notebook-bg-dark"
+      className="relative flex min-h-dvh flex-col items-center justify-center overflow-hidden touch-none transition-colors duration-300 notebook-bg dark:notebook-bg-dark"
     >
       <InkTrail />
       
