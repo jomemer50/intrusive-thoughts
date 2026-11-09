@@ -4,22 +4,26 @@ import { createContext, useContext, ReactNode } from 'react';
 import { useAnonymousUser } from '@/hooks/useAnonymousUser';
 
 type UserContextType = {
-  userId: string | null;
   displayName: string | null;
   isLoading: boolean;
+  isReady: boolean;
+  error: string | null;
+  retry: () => void;
 };
 
 const UserContext = createContext<UserContextType>({
-  userId: null,
   displayName: null,
   isLoading: true,
+  isReady: false,
+  error: null,
+  retry: () => {},
 });
 
 export function UserProvider({ children }: { children: ReactNode }) {
-  const { userId, displayName, isLoading } = useAnonymousUser();
+  const user = useAnonymousUser();
 
   return (
-    <UserContext.Provider value={{ userId, displayName, isLoading }}>
+    <UserContext.Provider value={user}>
       {children}
     </UserContext.Provider>
   );

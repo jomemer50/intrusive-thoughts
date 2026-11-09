@@ -1,81 +1,42 @@
 "use client";
 
-import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
+import { useCallback, useEffect, useState } from 'react';
 
-const STORAGE_KEY = 'rungtatron_user_id';
-
-function generateDisplayName(): string {
-  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
-  let suffix = '';
-  for (let i = 0; i < 4; i++) {
-    suffix += chars[Math.floor(Math.random() * chars.length)];
-  }
-  return `Thinker-${suffix}`;
-}
+// Identity used to be a user id in localStorage, read and written straight
+// against Supabase from the browser. It now lives in an httpOnly cookie set by
+// /api/session; the browser only ever learns the display name.
+const LEGACY_STORAGE_KEY = 'rungtatron_user_id';
 
 export function useAnonymousUser() {
-  const [userId, setUserId] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    async function initUser() {
-      try {
-        const existingId = localStorage.getItem(STORAGE_KEY);
-
-        if (existingId) {
-          // Returning user — fetch their display name
-          const { data, error } = await supabase
-            .from('users')
-            .select('id, display_name')
-            .eq('id', existingId)
-            .single();
-
-          if (data && !error) {
-            setUserId(data.id);
-            setDisplayName(data.display_name);
-            setIsLoading(false);
-            return;
-          }
-          // If user not found in DB (maybe tables were reset), fall through to create new
-        }
-
-        // New user — generate identity and persist
-        const newDisplayName = generateDisplayName();
-        const { data, error } = await supabase
-          .from('users')
-          .insert({ display_name: newDisplayName })
-          .select('id, display_name')
-          .single();
-
-        if (data && !error) {
-          localStorage.setItem(STORAGE_KEY, data.id);
-          setUserId(data.id);
-          setDisplayName(data.display_name);
-        } else {
-          console.error('Failed to create anonymous user:', error);
-          // Fallback: generate a local-only identity so the app still works
-          const fallbackId = crypto.randomUUID();
-          localStorage.setItem(STORAGE_KEY, fallbackId);
-          setUserId(fallbackId);
-          setDisplayName(newDisplayName);
-        }
-      } catch (err) {
-        console.error('Anonymous user init error:', err);
-        // Fallback for offline/error scenarios
-        const fallbackId = crypto.randomUUID();
-        const fallbackName = generateDisplayName();
-        localStorage.setItem(STORAGE_KEY, fallbackId);
-        setUserId(fallbackId);
-        setDisplayName(fallbackName);
-      } finally {
-        setIsLoading(false);
+  const start = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/session', { method: 'POST' });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body.displayName) {
+        throw new Error(body.error || `Session request failed (${res.status})`);
       }
+      setDisplayName(body.displayName);
+      try {
+        localStorage.removeItem(LEGACY_STORAGE_KEY);
+      } catch {}
+    } catch (err) {
+      console.error('Anonymous session error:', err);
+      setError(err instanceof Error ? err.message : 'Could not start a session');
+    } finally {
+      setIsLoading(false);
     }
-
-    initUser();
   }, []);
 
-  return { userId, displayName, isLoading };
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot fetch on mount
+    start();
+  }, [start]);
+
+  return { displayName, isLoading, error, retry: start, isReady: displayName !== null };
 }

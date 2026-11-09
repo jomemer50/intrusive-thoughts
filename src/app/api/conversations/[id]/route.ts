@@ -1,57 +1,62 @@
 import { NextRequest } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabase";
+import { getSupabaseAdmin } from "@/lib/supabase";
+import { getSessionUserId, isUuid, notFound, unauthorized } from "@/lib/session";
+import { MAX_TITLE_CHARS } from "@/lib/conversations";
 
-// PATCH /api/conversations/[id] — update conversation details
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+type Params = { params: Promise<{ id: string }> };
+
+// PATCH /api/conversations/[id] — rename one of the session user's conversations.
+export async function PATCH(req: NextRequest, { params }: Params) {
   try {
-    const { id } = await params;
-    const supabase = createServerSupabaseClient();
-    const { title } = await req.json();
+    const userId = await getSessionUserId();
+    if (!userId) return unauthorized();
 
-    if (!title) {
+    const { id } = await params;
+    if (!isUuid(id)) return notFound();
+
+    const { title } = await req.json().catch(() => ({}));
+    if (typeof title !== "string" || !title.trim()) {
       return Response.json({ error: "title is required" }, { status: 400 });
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await getSupabaseAdmin()
       .from("conversations")
-      .update({ title, updated_at: new Date().toISOString() })
+      .update({ title: title.trim().slice(0, MAX_TITLE_CHARS), updated_at: new Date().toISOString() })
       .eq("id", id)
-      .select()
-      .single();
-
-    if (error) {
-      return Response.json({ error: error.message }, { status: 500 });
-    }
+      .eq("user_id", userId)
+      .select("id, parent_conversation_id, title, created_at, updated_at")
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return notFound();
 
     return Response.json(data);
-  } catch (e: any) {
-    return Response.json({ error: e.message }, { status: 500 });
+  } catch (e) {
+    console.error("Rename conversation error:", e);
+    return Response.json({ error: "Could not update conversation" }, { status: 500 });
   }
 }
 
-// DELETE /api/conversations/[id] — delete a conversation
-export async function DELETE(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+// DELETE /api/conversations/[id] — delete one of the session user's conversations.
+export async function DELETE(_req: NextRequest, { params }: Params) {
   try {
-    const { id } = await params;
-    const supabase = createServerSupabaseClient();
+    const userId = await getSessionUserId();
+    if (!userId) return unauthorized();
 
-    const { error } = await supabase
+    const { id } = await params;
+    if (!isUuid(id)) return notFound();
+
+    const { data, error } = await getSupabaseAdmin()
       .from("conversations")
       .delete()
-      .eq("id", id);
-
-    if (error) {
-      return Response.json({ error: error.message }, { status: 500 });
-    }
+      .eq("id", id)
+      .eq("user_id", userId)
+      .select("id");
+    if (error) throw error;
+    if (!data || data.length === 0) return notFound();
 
     return Response.json({ success: true });
-  } catch (e: any) {
-    return Response.json({ error: e.message }, { status: 500 });
+  } catch (e) {
+    console.error("Delete conversation error:", e);
+    return Response.json({ error: "Could not delete conversation" }, { status: 500 });
   }
 }

@@ -1,66 +1,58 @@
 import { NextRequest } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabase";
+import { getSupabaseAdmin } from "@/lib/supabase";
+import { getSessionUserId, unauthorized } from "@/lib/session";
+import { MAX_TITLE_CHARS, ownsConversation } from "@/lib/conversations";
 
-// GET /api/conversations?userId=xxx — list user's own conversations
-// GET /api/conversations?public=true — list all public conversations (last 24h)
-export async function GET(req: NextRequest) {
+const CONVERSATION_FIELDS = "id, parent_conversation_id, title, created_at, updated_at";
+
+// GET /api/conversations — the session user's conversations, newest first.
+export async function GET() {
   try {
-    const supabase = createServerSupabaseClient();
-    const { searchParams } = req.nextUrl;
-    const userId = searchParams.get("userId");
+    const userId = await getSessionUserId();
+    if (!userId) return unauthorized();
 
-    let query = supabase
+    const { data, error } = await getSupabaseAdmin()
       .from("conversations")
-      .select("id, user_id, parent_conversation_id, title, created_at, updated_at, users(display_name)")
-      .order("updated_at", { ascending: false });
-
-    if (userId) {
-      query = query.eq("user_id", userId);
-    }
-
-    const { data, error } = await query.limit(100);
-
-    if (error) {
-      return Response.json({ error: error.message }, { status: 500 });
-    }
+      .select(CONVERSATION_FIELDS)
+      .eq("user_id", userId)
+      .order("updated_at", { ascending: false })
+      .limit(100);
+    if (error) throw error;
 
     return Response.json(data);
-  } catch (e: any) {
-    return Response.json({ error: e.message }, { status: 500 });
+  } catch (e) {
+    console.error("List conversations error:", e);
+    return Response.json({ error: "Could not load conversations" }, { status: 500 });
   }
 }
 
-// POST /api/conversations — create a new conversation
+// POST /api/conversations — create a conversation, optionally replying to one of the user's own.
 export async function POST(req: NextRequest) {
   try {
-    const supabase = createServerSupabaseClient();
-    const { userId, title, parentConversationId } = await req.json();
+    const userId = await getSessionUserId();
+    if (!userId) return unauthorized();
 
-    if (!userId) {
-      return Response.json({ error: "userId is required" }, { status: 400 });
-    }
+    const supabase = getSupabaseAdmin();
+    const { title, parentConversationId } = await req.json().catch(() => ({}));
 
-    const insertData: any = {
-      user_id: userId,
-      title: title || "New Thought",
-    };
-
-    if (parentConversationId) {
-      insertData.parent_conversation_id = parentConversationId;
+    if (parentConversationId != null && !(await ownsConversation(supabase, userId, parentConversationId))) {
+      return Response.json({ error: "Parent conversation not found" }, { status: 404 });
     }
 
     const { data, error } = await supabase
       .from("conversations")
-      .insert(insertData)
-      .select("id, user_id, parent_conversation_id, title, created_at, updated_at")
+      .insert({
+        user_id: userId,
+        title: typeof title === "string" && title.trim() ? title.trim().slice(0, MAX_TITLE_CHARS) : "New Thought",
+        parent_conversation_id: parentConversationId ?? null,
+      })
+      .select(CONVERSATION_FIELDS)
       .single();
-
-    if (error) {
-      return Response.json({ error: error.message }, { status: 500 });
-    }
+    if (error) throw error;
 
     return Response.json(data);
-  } catch (e: any) {
-    return Response.json({ error: e.message }, { status: 500 });
+  } catch (e) {
+    console.error("Create conversation error:", e);
+    return Response.json({ error: "Could not create conversation" }, { status: 500 });
   }
 }
