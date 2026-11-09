@@ -315,7 +315,7 @@ export default function ChatClient() {
               <Menu className="w-5 h-5" />
             </button>
             <h1 className="font-semibold">Thoughts</h1>
-            <span className="text-xs bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 px-2 py-1 rounded hidden sm:inline-block">*lights a cigarrete*</span>
+            <span className="text-xs bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 px-2 py-1 rounded hidden sm:inline-block">*lights a cigarette*</span>
           </div>
           {mounted && (
             <div className="flex items-center space-x-2">
